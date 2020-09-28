@@ -21,8 +21,7 @@ Puppet::Type.type(:ldap_entry).provide(:ldap) do
         @mutable = [resource[:mutable]].flatten
         matching = resource[:attributes].all? do |k, _|
           return false unless entry.respond_to?(k)
-          return true if @mutable.include? k
-          entry.send(k).sort.join(",").force_encoding('UTF-8') == [resource[:attributes][k]].flatten.sort.join(",")
+          ( @mutable.include? k ) || ( entry.send(k).sort.join(",").force_encoding('UTF-8') == [resource[:attributes][k]].flatten.sort.join(",") )
         end
         return matching
       end
@@ -40,21 +39,25 @@ Puppet::Type.type(:ldap_entry).provide(:ldap) do
 
   def create
     if @entry
+      status = LDAP::Success
+      message = ""
       resource[:attributes].each do |k, v|
         if @entry.respond_to?(k)
           next if @mutable.include? k
           unless @entry.send(k).to_set == [v].flatten.to_set
-            ldap_replace_attribute([resource[:host], resource[:port], resource[:username], resource[:password],
+            status, message = ldap_replace_attribute([resource[:host], resource[:port], resource[:username], resource[:password],
                         [resource[:name], k, v]])
           end
         else
-          ldap_add_attribute([resource[:host], resource[:port], resource[:username], resource[:password],
+          status, message = ldap_add_attribute([resource[:host], resource[:port], resource[:username], resource[:password],
                         [resource[:name], k, v]])
+          break unless status == LDAP::Success
         end
       end
     else
       status, message = ldap_add([resource[:host], resource[:port], resource[:username], resource[:password],
                           {:dn => resource[:name], :attributes => resource[:attributes]}])
+      break unless status == LDAP::Success
     end
     raise "LDAP Error #{status}: #{message}. Check server log for more info." unless status == LDAP::Success
   end
